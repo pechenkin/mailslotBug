@@ -85,7 +85,8 @@ MsfsRead(PDEVICE_OBJECT DeviceObject,
         Context = (PMSFS_DPC_CTX)Irp->Tail.Overlay.DriverContext[0];
         if (Context)
         {
-            KeCancelTimer(&Context->Timer);
+	    if (Context->Timer)
+                KeCancelTimer(&Context->Timer);
             ExFreePool(Context);
         }
     }
