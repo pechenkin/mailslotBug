@@ -30,7 +30,6 @@ typedef struct _MSFS_FCB
     struct _MSFS_CCB *ServerCcb;
     ULONG ReferenceCount;
     LARGE_INTEGER TimeOut;
-    KEVENT MessageEvent;
     ULONG MaxMessageSize;
     ULONG MessageCount;
     KSPIN_LOCK MessageListLock;
@@ -38,7 +37,7 @@ typedef struct _MSFS_FCB
     IO_CSQ CancelSafeQueue;
     KSPIN_LOCK QueueLock;
     LIST_ENTRY PendingIrpQueue;
-    ULONG WailCount;
+    ULONG WaitCount;
 } MSFS_FCB, *PMSFS_FCB;
 
 typedef struct _MSFS_DPC_CTX

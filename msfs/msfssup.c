@@ -38,33 +38,25 @@ PIRP MsfsPeekNextIrp(PIO_CSQ Csq, PIRP Irp, PVOID PeekContext)
     PIRP                    nextIrp = NULL;
     PLIST_ENTRY             nextEntry;
     PLIST_ENTRY             listHead;
-    PIO_STACK_LOCATION     irpStack;
+
+    UNREFERENCED_PARAMETER(PeekContext);
 
     fsb = CONTAINING_RECORD(Csq, MSFS_FCB, CancelSafeQueue);
 
     listHead = &fsb->PendingIrpQueue;
 
-    if (Irp == NULL) {
+    if (Irp == NULL)
+    {
         nextEntry = listHead->Flink;
-    } else {
+    }
+    else
+    {
         nextEntry = Irp->Tail.Overlay.ListEntry.Flink;
     }
 
-    while(nextEntry != listHead) {
-
+    if (nextEntry != listHead)
+    {
         nextIrp = CONTAINING_RECORD(nextEntry, IRP, Tail.Overlay.ListEntry);
-
-        irpStack = IoGetCurrentIrpStackLocation(nextIrp);
-
-        if (PeekContext) {
-            if (irpStack->FileObject == (PFILE_OBJECT) PeekContext) {
-                break;
-            }
-        } else {
-            break;
-        }
-        nextIrp = NULL;
-        nextEntry = nextEntry->Flink;
     }
 
     return nextIrp;
@@ -81,11 +73,10 @@ VOID MsfsAcquireLock(PIO_CSQ Csq, PKIRQL Irql)
 
 VOID MsfsReleaseLock(PIO_CSQ Csq, KIRQL Irql)
 {
-    PMSFS_FCB   fsd;
+    PMSFS_FCB   fsb;
 
-    fsd = CONTAINING_RECORD(Csq,
-                                 MSFS_FCB, CancelSafeQueue);
-    KeReleaseSpinLock(&fsd->QueueLock, Irql);
+    fsb = CONTAINING_RECORD(Csq,MSFS_FCB, CancelSafeQueue);
+    KeReleaseSpinLock(&fsb->QueueLock, Irql);
 }
 
 VOID MsfsCompleteCanceledIrp(PIO_CSQ pCsq, PIRP Irp)
@@ -112,7 +103,7 @@ VOID MsfsTimeout(struct _KDPC *Dpc,
         wIrp->IoStatus.Status = STATUS_IO_TIMEOUT;
         IoCompleteRequest( wIrp, IO_NO_INCREMENT );
    }
-   ExFreePool(Context);
+   ExFreePoolWithTag(Context,'tFsM');
 }
 
 /* EOF */

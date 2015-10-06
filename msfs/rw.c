@@ -78,13 +78,16 @@ MsfsRead(PDEVICE_OBJECT DeviceObject,
 
         ExFreePoolWithTag(Message, 'rFsM');
         Fcb->MessageCount--;
-        if (Fcb->MessageCount == 0)
-        {
-            KeClearEvent(&Fcb->MessageEvent);
-        }
         Irp->IoStatus.Status = Status = STATUS_SUCCESS;
         Irp->IoStatus.Information = LengthRead;
         IoCompleteRequest(Irp, IO_NO_INCREMENT);
+
+        Context = (PMSFS_DPC_CTX)Irp->Tail.Overlay.DriverContext[0];
+        if (Context)
+        {
+            KeCancelTimer(&Context->Timer);
+            ExFreePool(Context);
+        }
     }
     else
     {
@@ -97,7 +100,9 @@ MsfsRead(PDEVICE_OBJECT DeviceObject,
         }
         else
         {
-            Context = FsRtlAllocatePool( NonPagedPool, sizeof(MSFS_DPC_CTX));
+
+            Context = ExAllocatePoolWithTag( NonPagedPool, sizeof(MSFS_DPC_CTX), 'tFsM');
+            Irp->Tail.Overlay.DriverContext[0] = Context;
 
             IoCsqInsertIrp(&Fcb->CancelSafeQueue, Irp, &Context->Csq_context);
             Timer = &Context->Timer;
@@ -111,7 +116,7 @@ MsfsRead(PDEVICE_OBJECT DeviceObject,
                 KeSetTimer( Timer, Timeout, Dpc );
             }
 
-            Fcb->WailCount++;
+            Fcb->WaitCount++;
             Irp->IoStatus.Status = Status = STATUS_PENDING;
             Irp->IoStatus.Information = LengthRead;
             IoMarkIrpPending( Irp );
@@ -186,19 +191,12 @@ MsfsWrite(PDEVICE_OBJECT DeviceObject,
     KeReleaseSpinLock(&Fcb->MessageListLock, oldIrql);
 
     Fcb->MessageCount++;
-    if (Fcb->MessageCount == 1)
-    {
-        KeSetEvent(&Fcb->MessageEvent,
-                   0,
-                   FALSE);
-    }
-
-    if (Fcb->WailCount > 0)
+    if (Fcb->WaitCount > 0)
     {
         IrpW = IoCsqRemoveNextIrp(&Fcb->CancelSafeQueue, NULL);
         /* FIXME: It is necessary to reset the timers. */
         MsfsRead(DeviceObject, IrpW);
-        Fcb->WailCount--;
+        Fcb->WaitCount--;
     }
 
     Irp->IoStatus.Status = STATUS_SUCCESS;
