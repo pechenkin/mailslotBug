@@ -4,12 +4,12 @@
  * FILE:       drivers/filesystems/msfs/create.c
  * PURPOSE:    Mailslot filesystem
  * PROGRAMMER: Eric Kohl
+ *             Nikita Pechenkin (n.pechenkin@mail.ru)
  */
 
 /* INCLUDES ******************************************************************/
 
 #include "msfs.h"
-#include "msfssup.h"
 
 #include <ndk/iotypes.h>
 
@@ -177,23 +177,19 @@ MsfsCreateMailslot(PDEVICE_OBJECT DeviceObject,
     Fcb->MaxMessageSize = Buffer->MaximumMessageSize;
     Fcb->MessageCount = 0;
     Fcb->TimeOut = Buffer->ReadTimeout;
-    KeInitializeEvent(&Fcb->MessageEvent,
-                      NotificationEvent,
-                      FALSE);
 
     InitializeListHead(&Fcb->MessageListHead);
     KeInitializeSpinLock(&Fcb->MessageListLock);
 
-    Fcb->WailCount = 0;
     KeInitializeSpinLock(&Fcb->QueueLock);
-    InitializeListHead( &Fcb->PendingIrpQueue );
-    IoCsqInitialize( &Fcb->CancelSafeQueue,
-                     (PIO_CSQ_INSERT_IRP)MsfsInsertIrp,
-                     (PIO_CSQ_REMOVE_IRP)MsfsRemoveIrp,
-                     (PIO_CSQ_PEEK_NEXT_IRP)MsfsPeekNextIrp,
-                     (PIO_CSQ_ACQUIRE_LOCK)MsfsAcquireLock,
-                     (PIO_CSQ_RELEASE_LOCK)MsfsReleaseLock,
-                     (PIO_CSQ_COMPLETE_CANCELED_IRP)MsfsCompleteCanceledIrp );
+    InitializeListHead(&Fcb->PendingIrpQueue);
+    IoCsqInitialize(&Fcb->CancelSafeQueue,
+                    MsfsInsertIrp,
+                    MsfsRemoveIrp,
+                    MsfsPeekNextIrp,
+                    MsfsAcquireLock,
+                    MsfsReleaseLock,
+                    MsfsCompleteCanceledIrp);
 
     KeLockMutex(&DeviceExtension->FcbListLock);
     current_entry = DeviceExtension->FcbListHead.Flink;

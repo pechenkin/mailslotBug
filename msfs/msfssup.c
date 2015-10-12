@@ -3,116 +3,134 @@
  * PROJECT:    ReactOS kernel
  * FILE:       drivers/filesystems/msfs/msfssup.c
  * PURPOSE:    Mailslot filesystem
- * PROGRAMMER: nikita pechenkin (n.pechenkin@mail.ru)
+ * PROGRAMMER: Nikita Pechenkin (n.pechenkin@mail.ru)
  */
 
 /* INCLUDES ******************************************************************/
 #include "msfs.h"
-#include "msfssup.h"
-
-#include <ndk/iotypes.h>
 
 #define NDEBUG
 #include <debug.h>
 
 /* FUNCTIONS *****************************************************************/
 
-VOID MsfsInsertIrp (PIO_CSQ Csq, PIRP Irp)
+VOID NTAPI
+MsfsInsertIrp(PIO_CSQ Csq, PIRP Irp)
 {
-    PMSFS_FCB   fsb;
+    PMSFS_FCB Fcb;
 
-    fsb = CONTAINING_RECORD(Csq, MSFS_FCB, CancelSafeQueue);
-    InsertTailList(&fsb->PendingIrpQueue,&Irp->Tail.Overlay.ListEntry);
+    Fcb = CONTAINING_RECORD(Csq, MSFS_FCB, CancelSafeQueue);
+    InsertTailList(&Fcb->PendingIrpQueue, &Irp->Tail.Overlay.ListEntry);
 }
 
-VOID MsfsRemoveIrp(PIO_CSQ Csq, PIRP Irp)
+VOID NTAPI
+MsfsRemoveIrp(PIO_CSQ Csq, PIRP Irp)
 {
     UNREFERENCED_PARAMETER(Csq);
 
     RemoveEntryList(&Irp->Tail.Overlay.ListEntry);
 }
 
-PIRP MsfsPeekNextIrp(PIO_CSQ Csq, PIRP Irp, PVOID PeekContext)
+PIRP NTAPI
+MsfsPeekNextIrp(PIO_CSQ Csq, PIRP Irp, PVOID PeekContext)
 {
-    PMSFS_FCB      fsb;
-    PIRP                    nextIrp = NULL;
-    PLIST_ENTRY             nextEntry;
-    PLIST_ENTRY             listHead;
-    PIO_STACK_LOCATION     irpStack;
+    PMSFS_FCB Fcb;
+    PIRP NextIrp = NULL;
+    PLIST_ENTRY NextEntry, ListHead;
+    PIO_STACK_LOCATION Stack;
 
-    fsb = CONTAINING_RECORD(Csq, MSFS_FCB, CancelSafeQueue);
+    Fcb = CONTAINING_RECORD(Csq, MSFS_FCB, CancelSafeQueue);
 
-    listHead = &fsb->PendingIrpQueue;
+    ListHead = &Fcb->PendingIrpQueue;
 
-    if (Irp == NULL) {
-        nextEntry = listHead->Flink;
-    } else {
-        nextEntry = Irp->Tail.Overlay.ListEntry.Flink;
+    if (Irp == NULL)
+    {
+        NextEntry = ListHead->Flink;
+    }
+    else
+    {
+        NextEntry = Irp->Tail.Overlay.ListEntry.Flink;
     }
 
-    while(nextEntry != listHead) {
+    for (; NextEntry != ListHead; NextEntry = NextEntry->Flink)
+    {
+        NextIrp = CONTAINING_RECORD(NextEntry, IRP, Tail.Overlay.ListEntry);
 
-        nextIrp = CONTAINING_RECORD(nextEntry, IRP, Tail.Overlay.ListEntry);
+        Stack = IoGetCurrentIrpStackLocation(NextIrp);
 
-        irpStack = IoGetCurrentIrpStackLocation(nextIrp);
-
-        if (PeekContext) {
-            if (irpStack->FileObject == (PFILE_OBJECT) PeekContext) {
+        if (PeekContext)
+        {
+            if (Stack->FileObject == (PFILE_OBJECT)PeekContext)
+            {
                 break;
             }
-        } else {
+        }
+        else
+        {
             break;
         }
-        nextIrp = NULL;
-        nextEntry = nextEntry->Flink;
+
+        NextIrp = NULL;
     }
 
-    return nextIrp;
+    return NextIrp;
 }
 
-VOID MsfsAcquireLock(PIO_CSQ Csq, PKIRQL Irql)
+VOID NTAPI
+MsfsAcquireLock(PIO_CSQ Csq, PKIRQL Irql)
 {
-    PMSFS_FCB   fsb;
+    PMSFS_FCB Fcb;
 
-    fsb = CONTAINING_RECORD(Csq,MSFS_FCB, CancelSafeQueue);
-    KeAcquireSpinLock(&fsb->QueueLock, Irql);
+    Fcb = CONTAINING_RECORD(Csq, MSFS_FCB, CancelSafeQueue);
+    KeAcquireSpinLock(&Fcb->QueueLock, Irql);
 }
 
 
-VOID MsfsReleaseLock(PIO_CSQ Csq, KIRQL Irql)
+VOID NTAPI
+MsfsReleaseLock(PIO_CSQ Csq, KIRQL Irql)
 {
-    PMSFS_FCB   fsd;
+    PMSFS_FCB Fcb;
 
-    fsd = CONTAINING_RECORD(Csq,
-                                 MSFS_FCB, CancelSafeQueue);
-    KeReleaseSpinLock(&fsd->QueueLock, Irql);
+    Fcb = CONTAINING_RECORD(Csq, MSFS_FCB, CancelSafeQueue);
+    KeReleaseSpinLock(&Fcb->QueueLock, Irql);
 }
 
-VOID MsfsCompleteCanceledIrp(PIO_CSQ pCsq, PIRP Irp)
+VOID NTAPI
+MsfsCompleteCanceledIrp(PIO_CSQ Csq, PIRP Irp)
 {
 
-    UNREFERENCED_PARAMETER(pCsq);
+    UNREFERENCED_PARAMETER(Csq);
 
     Irp->IoStatus.Status = STATUS_CANCELLED;
     Irp->IoStatus.Information = 0;
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
 }
 
-VOID MsfsTimeout(struct _KDPC *Dpc,
+VOID NTAPI
+MsfsTimeout(PKDPC Dpc,
             PVOID DeferredContext,
             PVOID SystemArgument1,
             PVOID SystemArgument2)
 {
-   PMSFS_DPC_CTX Context;
-   PIRP wIrp;
-   Context = (PMSFS_DPC_CTX)DeferredContext;
-   wIrp = IoCsqRemoveIrp(Context->Csq,&Context->Csq_context);
-   if (wIrp)
-   {
-        wIrp->IoStatus.Status = STATUS_IO_TIMEOUT;
-        IoCompleteRequest( wIrp, IO_NO_INCREMENT );
-   }
-   ExFreePool(Context);
+    PMSFS_DPC_CTX Context;
+    PIRP Irp;
+
+    Context = (PMSFS_DPC_CTX)DeferredContext;
+
+    /* Try to get the IRP */
+    Irp = IoCsqRemoveIrp(Context->Csq, &Context->CsqContext);
+    if (Irp != NULL)
+    {
+        /* It timed out, complete it (it's ours) and free context */
+        Irp->IoStatus.Status = STATUS_IO_TIMEOUT;
+        IoCompleteRequest(Irp, IO_NO_INCREMENT);
+        ExFreePoolWithTag(Context, 'NFsM');
+    }
+    else
+    {
+        /* We were racing with writing and failed, signal we're done */
+        KeSetEvent(&Context->Event, IO_NO_INCREMENT, FALSE);
+    }
 }
 
 /* EOF */
